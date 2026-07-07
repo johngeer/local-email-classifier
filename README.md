@@ -49,12 +49,23 @@ Built bottom-up following the checklist in `design.md`. Current state:
 - `core/mod.rs` — declares the leaves and defines the `RawEmail` seam type;
   re-exports `Priority`, `ClassCounts`.
 
+**Done — §2, feature assembly + model math:**
+- `core/features.rs` — `assemble` (fixed 392-dim layout, golden-tested order).
+- `core/model.rs` — `Model` struct and pure `predict_proba`/`predict` (softmax +
+  argmax), plus `FEATURE_VERSION`.
+- `core/mod.rs` — composes the leaves into the two public entry points
+  `classify` and `features_for`, plus `prepared_text` (the shell embeds its
+  output — the core does not touch the embedder). Boundary verified: `core/` has
+  no `use` of notmuch/fastembed/std::fs.
+
+**Done — §3, persistence:**
+- `shell/persist.rs` — JSON `save`/`load` for `models/model.json` with both
+  load-time guards (`feature_version`, `embedding_model_id`). Round-trip and
+  guard-rejection tests included.
+
 **Not yet implemented:**
-- §2 — `core/features.rs` (`assemble`), `core/model.rs` (`Model`,
-  `predict_proba`/`predict`), and the composed public entry points (`classify`,
-  `features_for`).
-- §3–§5 — the shell: `persist`, `mailfile`, `embed`, `notmuch`, `fit`, and the
-  `train` / `classify_new` entry points. `src/shell/mod.rs` is still a stub.
+- §4–§5 — the remaining shell adapters: `mailfile`, `embed`, `notmuch`, `fit`,
+  and the `train` / `classify_new` entry points.
 - §6 — `main.rs` CLI dispatch, real-archive training, and post-new hook install.
 
 See the *Implementation checklist* in `design.md` for the full ordered plan.

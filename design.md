@@ -350,18 +350,20 @@ Phase 3 items are listed last as deferred.
 - [x] `core/text.rs` — `prepare_text`. *Test:* subject-first, quote/sig strip,
   HTML strip, char budget, empty body.
 
-**2. Feature assembly + model math** (depends on §1)
-- [ ] `core/features.rs` — `assemble(embedding, domain_hist, addr_hist)`. *Test:*
+**2. Feature assembly + model math** (depends on §1) ✅ complete
+- [x] `core/features.rs` — `assemble(embedding, domain_hist, addr_hist)`. *Test:*
   length exactly 392, stable order (golden). Needs `history` outputs to exist.
-- [ ] `core/model.rs` — `Model` struct + pure `predict_proba` / `predict`. *Test:*
+- [x] `core/model.rs` — `Model` struct + pure `predict_proba` / `predict`. *Test:*
   hand-built weight matrix → probs sum to 1, argmax picks expected class. No
   solver yet.
-- [ ] `core/mod.rs` — compose the leaves into the two public fns `classify` and
+- [x] `core/mod.rs` — compose the leaves into the two public fns `classify` and
   `features_for`; re-export `Priority`, `Model`, `ClassCounts`. This closes the
   core interface — verify `core/mod.rs` has **no** `use` of notmuch/fastembed/fs.
+  (`classify`/`features_for` take the embedding as an argument; `prepared_text`
+  hands the shell the string to embed, keeping the embedder out of the core.)
 
-**3. Persistence** (depends on `Model` existing)
-- [ ] `shell/persist.rs` — JSON save/load + load-time guards (`feature_version`,
+**3. Persistence** (depends on `Model` existing) ✅ complete
+- [x] `shell/persist.rs` — JSON save/load + load-time guards (`feature_version`,
   `embedding_model_id`). *Test:* serialize→deserialize→identical predictions;
   guard rejects a mismatched `embedding_model_id`.
 
