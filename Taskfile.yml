@@ -1,0 +1,18 @@
+version: '3'
+
+tasks:
+  test:
+    desc: Run the test suite
+    cmds:
+      - cargo test
+
+  build:
+    desc: Build the project in release mode
+    cmds:
+      - cargo build --release
+
+  run:
+    desc: Run the classifier, teeing output to a timestamped file in output/
+    cmds:
+      - mkdir -p output
+      - cargo run --release -- {{.CLI_ARGS}} 2>&1 | tee "output/run-$(date +%Y%m%d-%H%M%S).log"

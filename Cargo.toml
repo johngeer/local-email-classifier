@@ -1,0 +1,21 @@
+[package]
+name = "email_classifier"
+version = "0.1.0"
+edition = "2021"
+description = "Local email priority classifier (embeddings + multinomial logistic regression over notmuch tag history)"
+
+[dependencies]
+# Email parsing: From, subject, body (prefer text/plain part)
+mail-parser = "0.9"
+# Registrable domain (eTLD+1) extraction
+psl = "2"
+# Embeddings: all-MiniLM-L6-v2 (384-dim, unit-norm, ONNX, auto-download)
+fastembed = "4"
+# Multinomial logistic regression (softmax, L-BFGS)
+linfa = "0.7"
+linfa-logistic = "0.7"
+# Feature matrices
+ndarray = "0.15"
+# One human-readable model file
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
