@@ -14,6 +14,13 @@ tasks:
       - task: run
         vars: {CLI_ARGS: classify}
 
+  eval:
+    desc: Time-held-out confusion-matrix sanity check (release), logging to output/. Pass --cutoff via CLI_ARGS.
+    cmds:
+      - task: build
+      - task: run
+        vars: {CLI_ARGS: 'eval {{.CLI_ARGS}}'}
+
   test:
     desc: Run the test suite, teeing output to a timestamped file in output/
     cmds:

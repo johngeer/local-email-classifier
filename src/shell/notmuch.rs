@@ -38,17 +38,35 @@ pub const CONFIRMED_FILTER: &str = "not (tag:auto and tag:unread)";
 /// Holds the two per-sender caches (domains, addresses) and turns effectful,
 /// order-dependent count lookups into the plain [`ClassCounts`] the core
 /// consumes. Construct once per `train`/`classify_new` invocation.
+///
+/// An optional `date_bound` AND-s a `date:` clause into every count query. `None`
+/// (the production path) counts the full archive; `Some(clause)` restricts to a
+/// window — used by the time-held-out eval so a test email's history features see
+/// only labels that existed before the cutoff, never its own future label.
 pub struct Notmuch {
     domain_counts: HashMap<String, ClassCounts>,
     addr_counts: HashMap<String, ClassCounts>,
+    date_bound: Option<String>,
 }
 
 impl Notmuch {
-    /// A fresh adapter with empty caches.
+    /// A fresh adapter with empty caches, counting the full archive (production).
     pub fn new() -> Notmuch {
         Notmuch {
             domain_counts: HashMap::new(),
             addr_counts: HashMap::new(),
+            date_bound: None,
+        }
+    }
+
+    /// A fresh adapter whose counts are restricted to a notmuch `date:` window
+    /// (e.g. `"..2026-07-01"`). Used only by the eval harness for an honest
+    /// time-held-out split — history as of the cutoff, no future-label leak.
+    pub fn with_date_bound(date_bound: &str) -> Notmuch {
+        Notmuch {
+            domain_counts: HashMap::new(),
+            addr_counts: HashMap::new(),
+            date_bound: Some(date_bound.to_string()),
         }
     }
 
@@ -60,7 +78,7 @@ impl Notmuch {
         if let Some(c) = self.domain_counts.get(domain) {
             return *c;
         }
-        let counts = counts_for_from(&format!("*@{domain}"));
+        let counts = counts_for_from(&format!("*@{domain}"), self.date_bound.as_deref());
         self.domain_counts.insert(domain.to_string(), counts);
         counts
     }
@@ -71,7 +89,7 @@ impl Notmuch {
         if let Some(c) = self.addr_counts.get(addr) {
             return *c;
         }
-        let counts = counts_for_from(addr);
+        let counts = counts_for_from(addr, self.date_bound.as_deref());
         self.addr_counts.insert(addr.to_string(), counts);
         counts
     }
@@ -79,12 +97,17 @@ impl Notmuch {
 
 /// The three confirmed-label counts for a `from:` pattern, one query per class.
 /// Any query error degrades that class to 0 (logged once) rather than aborting —
-/// unknown history, not a crash.
-fn counts_for_from(from_pattern: &str) -> ClassCounts {
+/// unknown history, not a crash. `date_bound` (e.g. `Some("..2026-07-01")`)
+/// AND-s a `date:` clause in so counts see only labels inside a window; `None`
+/// counts the full archive (production).
+fn counts_for_from(from_pattern: &str, date_bound: Option<&str>) -> ClassCounts {
+    let date = date_bound
+        .map(|d| format!(" and date:{d}"))
+        .unwrap_or_default();
     let mut counts = ZERO_COUNTS;
     for p in Priority::ALL {
         let query = format!(
-            "tag:{} and {CONFIRMED_FILTER} and from:{from_pattern}",
+            "tag:{} and {CONFIRMED_FILTER} and from:{from_pattern}{date}",
             p.to_tag()
         );
         counts[p.to_index()] = count(&query).unwrap_or_else(|e| {
@@ -108,9 +131,23 @@ fn counts_for_from(from_pattern: &str) -> ClassCounts {
 /// upstream tagging bug, and duplicating it across labels is a faithful, harmless
 /// reflection of the actual tags rather than something to silently paper over.
 pub fn confirmed_label_files() -> Result<Vec<(PathBuf, Priority)>, String> {
+    confirmed_label_files_dated(None)
+}
+
+/// Like [`confirmed_label_files`] but restricted to a notmuch `date:` window
+/// (e.g. `Some("..2026-07-01")` for the train side of a split, `Some("2026-07-01..")`
+/// for the held-out test side). `None` is the full-archive production selection.
+/// Used only by the eval harness. Same per-level, `--duplicate=1`, label-from-query
+/// contract as [`confirmed_label_files`].
+pub fn confirmed_label_files_dated(
+    date_bound: Option<&str>,
+) -> Result<Vec<(PathBuf, Priority)>, String> {
+    let date = date_bound
+        .map(|d| format!(" and date:{d}"))
+        .unwrap_or_default();
     let mut labeled = Vec::new();
     for p in Priority::ALL {
-        let query = format!("tag:{} and {CONFIRMED_FILTER}", p.to_tag());
+        let query = format!("tag:{} and {CONFIRMED_FILTER}{date}", p.to_tag());
         for path in search_files(&query)? {
             labeled.push((path, p));
         }

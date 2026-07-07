@@ -3,3 +3,6 @@
 /models/
 # saved run logs (see `task run`)
 /output/
+# fastembed's auto-downloaded ONNX weights — large, write-once, regenerable
+# (design → "Embedding weights are not our file"); never co-located with models/
+/.fastembed_cache/

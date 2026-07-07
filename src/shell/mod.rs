@@ -18,6 +18,10 @@ mod fit;
 mod mailfile;
 mod notmuch;
 
+// The time-held-out evaluation harness (design → *Evaluation*, checklist §6). A
+// sanity check, not on the production path; kept behind the `eval` entry point.
+mod eval;
+
 use std::path::Path;
 
 use crate::core::{self, RawEmail};
@@ -167,6 +171,16 @@ pub fn train(model_path: &Path) -> Result<(), String> {
         .map_err(|e| format!("saving model {}: {e}", model_path.display()))?;
     log!("trained on {} example(s), saved {}", examples.len(), model_path.display());
     Ok(())
+}
+
+/// The evaluation entry point: a time-held-out confusion-matrix sanity check
+/// (design → *Evaluation*, checklist §6). Trains on confirmed labels before
+/// `cutoff` and scores predictions against confirmed labels on/after it, with
+/// history counts bounded to the train window on both sides. Prints the confusion
+/// matrix and metrics; writes no model and touches no tags. See
+/// [`eval`](self::eval) for the honest-history rationale.
+pub fn evaluate(cutoff: &str) -> Result<(), String> {
+    eval::evaluate(cutoff)
 }
 
 /// Gather one email's memoized domain + address history counts. The address is

@@ -138,6 +138,20 @@ address feature degrades gracefully to the prior for rarely-seen addresses.
 Cut from v1 (revisit only if the confusion matrix demands it): Tranco rank,
 is_subdomain, z-score normalization.
 
+**Possible later step — confidence × proportion interaction terms.** The model is
+multinomial logistic regression, which is *linear* in the features: every column
+gets its own weight and the per-class score is a plain sum (`Σ wⱼ·xⱼ`), with no
+cross terms. So the confidence scalar and the p1/p2/p3 proportions in each block
+do **not** interact — confidence acts only as a fixed per-class bias, it cannot
+make the model "trust the proportions more when confidence is high" (that would
+be a `confidence · P(pₙ)` product, which is not in the feature vector). Today the
+smoothing is what softly gates thin history: at low n the proportions sit near
+the prior, so they contribute little. To let the model learn that gating
+explicitly, append the interaction columns `confidence · P(p1|p2|p3)` for each of
+the domain and address blocks (6 more dims). This is a real feature-layout change:
+bump `FEATURE_VERSION` and retrain. Defer until the confusion matrix shows the
+model mishandling sparse- vs. rich-history senders.
+
 ## Architecture: functional core, imperative shell
 
 The rule: **all IO, caching, and the linfa solver live in the shell; the core is
@@ -364,7 +378,8 @@ warm-cache feature extraction → linfa fit → save JSON model.
    corrections are just notmuch retags.
 3. **Optional / as-needed:** chronological-replay training (fixes the leak),
    ordinal (proportional-odds) regression, model2vec embedder, Tranco rank if
-   novel-domain errors show up in the confusion matrix.
+   novel-domain errors show up in the confusion matrix, `confidence · P(pₙ)`
+   history interaction terms (see *Features*).
 
 ## Evaluation
 
@@ -377,6 +392,36 @@ human fixed, so it belongs in the held-out set like any other confirmed label.
 Held-out split by time (not random) to mimic deployment. Track overall accuracy,
 per-class recall (p3 recall matters most), and adjacent-vs-distant confusion
 (p1↔p3 mistakes are worse than p2↔p3).
+
+The `eval` subcommand runs this split: train on confirmed labels dated
+`..cutoff`, score against confirmed labels dated `cutoff..`. History counts are
+**bounded to the train window on both sides** (`Notmuch::with_date_bound`), so a
+test email's per-sender features are as-of-cutoff and never leak its own future
+label. That makes `eval` numbers *stricter* than the shipped `train`/`classify`
+path, which counts the full archive and accepts the leak (see *Training-time leak
+note*) — so `eval` reads pessimistically vs. production, not optimistically. It
+writes no model and touches no tags.
+
+**Results (cutoff `2026-07-01`, 760 train / 256 test):**
+
+```
+            prio-low    prio-norm   prio-high
+prio-low          10           9          0   | recall 52.6%
+prio-norm         24         114          8   | recall 78.1%
+prio-high          0          14         77   | recall 84.6%
+
+overall accuracy : 78.5%  (201/256)
+adjacent errors  : 55  (p1↔p2, p2↔p3)
+distant  errors  :  0   (p1↔p3 — the costly ones)
+```
+
+Read against the priorities above: **zero distant (p1↔p3) errors** — every
+mistake is off-by-one on the ladder, never junk-called-urgent or vice versa; p3
+recall (84.6%) is the strongest, exactly the class that matters most. The weak
+spot is p1 recall (52.6%: 9 of 19 low bumped to normal), a class-imbalance
+effect of only 56 low-priority training examples — and every p1 error is in the
+safe direction (low→normal, never low→high). Nothing in the matrix demands a
+Phase-3 change; the p1 gap is data quantity, not architecture.
 
 ## Implementation checklist
 
@@ -455,11 +500,17 @@ Phase 3 items are listed last as deferred.
   `--duplicate=1`): `search --output=files --duplicate=1` collapses
   forwarded-across-accounts copies to one example per notmuch message, so accuracy
   numbers no longer double-count cross-account mail.
-- [ ] Sanity-check the confusion matrix against a time-held-out split
-  (*Evaluation*); classify once by hand and eyeball the guesses.
+- [x] Sanity-check the confusion matrix against a time-held-out split
+  (*Evaluation*); classify once by hand and eyeball the guesses. Done via the
+  `eval` subcommand (train `date:..cutoff`, test `date:cutoff..`, history counts
+  bounded to the train window so no test email sees its own future label). At
+  cutoff `2026-07-01` (760 train / 256 test): **78.5% accuracy, zero distant
+  (p1↔p3) errors**, p3 recall 84.6%. See *Evaluation* → results.
 - [ ] Install as notmuch **post-new hook**; confirm it fires on an mbsync cycle and
   respects Scope + the skip-confirmed rule.
 
 **Deferred (Phase 3, only if the confusion matrix demands it):** chronological-
 replay training (removes the training-time leak), proportional-odds ordinal
-regression, `model2vec` embedder swap, Tranco rank feature.
+regression, `model2vec` embedder swap, Tranco rank feature, `confidence · P(pₙ)`
+history interaction terms (see *Features* — lets the linear model condition the
+proportions on how much history backs them).
