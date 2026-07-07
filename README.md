@@ -83,3 +83,39 @@ email's arrival — a known leak that inflates exactly these proportions; see
 
 For the current build status and the ordered implementation checklist, see
 `design.md`.
+
+## Deployment (notmuch post-new hook)
+
+The classifier runs from notmuch's **post-new hook** — no daemon, no cron. After
+every `notmuch new` (each mbsync cycle) the hook invokes `classify`, which tags
+in-scope new mail with `prio-*` + `auto`.
+
+The hook script lives in the dotfiles repo and is symlinked into the maildir's
+notmuch hook directory:
+
+```
+~/Documents/dotphiles/email/notmuch-hooks/post-new   # source (edit here)
+  → symlinked to →
+~/Mail/.notmuch/hooks/post-new                        # where notmuch looks
+```
+
+`notmuch new` runs the hook with the **maildir as cwd and a minimal `PATH`**, so
+the classifier stanza uses absolute paths for both the binary and the model and
+does not rely on `models/model.json` resolving relative to cwd:
+
+```sh
+classifier=~/Documents/scripts/email_classifier/target/release/email_classifier
+model=~/Documents/scripts/email_classifier/models/model.json
+if [ -x "$classifier" ]; then
+    "$classifier" classify --model "$model" || echo "post-new: email_classifier failed (non-fatal)" >&2
+fi
+```
+
+The call is **non-fatal**: a classifier failure logs to stderr but does not abort
+`notmuch new`, so mail tagging is never blocked by a bad model or a missing
+binary. The stanza runs *after* the account/spam/sent tagging in the same hook,
+so the classifier's date/tag scope filter sees accurate tags.
+
+To (re)deploy: `task build` (produces the release binary the hook points at) and
+`task train` (writes `models/model.json`). The hook picks up the new binary and
+model on the next `notmuch new` — nothing else to restart.

@@ -506,8 +506,13 @@ Phase 3 items are listed last as deferred.
   bounded to the train window so no test email sees its own future label). At
   cutoff `2026-07-01` (760 train / 256 test): **78.5% accuracy, zero distant
   (p1↔p3) errors**, p3 recall 84.6%. See *Evaluation* → results.
-- [ ] Install as notmuch **post-new hook**; confirm it fires on an mbsync cycle and
-  respects Scope + the skip-confirmed rule.
+- [x] Install as notmuch **post-new hook**; confirm it fires on an mbsync cycle and
+  respects Scope + the skip-confirmed rule. Done: the classifier stanza is appended
+  to `dotphiles/email/notmuch-hooks/post-new` (symlinked to
+  `~/Mail/.notmuch/hooks/post-new`), calling the release binary with an absolute
+  `--model` path, non-fatally. Verified firing writes `prio-*` + `auto` on 17
+  in-scope messages while leaving the 960 confirmed labels untouched. See README →
+  *Deployment*.
 
 **Deferred (Phase 3, only if the confusion matrix demands it):** chronological-
 replay training (removes the training-time leak), proportional-odds ordinal
