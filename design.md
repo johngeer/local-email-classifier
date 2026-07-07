@@ -9,6 +9,44 @@ so there is no normalization step, no stored stats, and a single JSON model file
 
 ## Tag interface (the whole API is notmuch tags)
 
+How the classifier reaches the mail: notmuch is the API for *tags, queries, and
+triggering*, but message **text** is read from the maildir files directly.
+`notmuch search --output=files` hands back paths, which the shell then parses
+with `mail-parser`. The classifier never writes, moves, or renames maildir files
+— the one flag interaction (`unread` ↔ maildir `Seen`) is notmuch's own
+`synchronize_flags`, not ours.
+
+```d2
+direction: down
+
+hook: "notmuch post-new hook" {shape: hexagon}
+cls: "email_classifier\n(train / classify)" {shape: rectangle}
+
+nm: "notmuch" {
+  tags: "tags + search/count\n(prio-*, auto, unread)" {shape: rectangle}
+  index: "index (Xapian)" {shape: cylinder}
+}
+
+md: "maildir\n(message files on disk)" {shape: page}
+mbsync: "mbsync" {shape: rectangle}
+
+hook -> cls: "fires each `notmuch new`"
+
+cls -> nm.tags: "write prio-* / auto (tag)\nquery labels + history counts"
+cls -> md: "read files & parse\n(mail-parser)" {style.stroke-dash: 3}
+
+nm.tags <-> nm.index
+nm.index -> md: "indexes" {style.stroke-dash: 3}
+mbsync -> md: "delivers new mail"
+
+nm.tags -> md: "--output=files\n(returns paths)" {style.stroke-dash: 3}
+```
+
+The dashed edges are file reads / path resolution; the solid `cls -> nm.tags`
+edge is the whole write side of the API (tagging). Note the classifier has two
+arrows out — one to notmuch for tags/queries, one straight to the maildir for
+text — which is the coupling discussed under *Load labeled messages* below.
+
 See `notes_email_setup.txt` → *Priority Labels* / *Priority Classifier* for how
 these tags are applied by hand in aerc and where the classifier hooks in.
 
@@ -367,14 +405,14 @@ Phase 3 items are listed last as deferred.
   `embedding_model_id`). *Test:* serialize→deserialize→identical predictions;
   guard rejects a mismatched `embedding_model_id`.
 
-**4. Shell adapters** (independent of each other; all depend on §2 seam types)
-- [ ] `shell/mailfile.rs` — `mail-parser` → `RawEmail`.
-- [ ] `shell/embed.rs` — `Embedder` trait + fastembed impl → `[f32; 384]`.
+**4. Shell adapters** (independent of each other; all depend on §2 seam types) ✅ complete
+- [x] `shell/mailfile.rs` — `mail-parser` → `RawEmail`.
+- [x] `shell/embed.rs` — `Embedder` trait + fastembed impl → `[f32; 384]`.
   Embedding failure aborts (per failure policy).
-- [ ] `shell/notmuch.rs` — search/count adapter + the two `HashMap` caches;
+- [x] `shell/notmuch.rs` — search/count adapter + the two `HashMap` caches;
   count errors fall back to `ClassCounts::ZERO`. Carries the
   `not (tag:auto and tag:unread)` filter.
-- [ ] `shell/fit.rs` — linfa L-BFGS solve → weights/intercepts. *Test:* tiny
+- [x] `shell/fit.rs` — linfa L-BFGS solve → weights/intercepts. *Test:* tiny
   linearly-separable set → ~100% train accuracy.
 
 **5. Shell entry points** (compose everything above)

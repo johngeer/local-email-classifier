@@ -21,9 +21,10 @@ mod model;
 mod text;
 
 pub use domain::registrable_domain;
+pub use features::{EMBED_DIM, FEATURE_DIM};
 pub use history::{ClassCounts, ZERO as ZERO_COUNTS};
 pub use labels::Priority;
-pub use model::{Model, FEATURE_VERSION};
+pub use model::{predict, Model, FEATURE_VERSION};
 
 /// The seam type the shell hands to the core: one parsed email, already read off
 /// disk. Defined here because the core defines what it consumes; the shell's

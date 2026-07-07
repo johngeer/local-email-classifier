@@ -63,9 +63,20 @@ Built bottom-up following the checklist in `design.md`. Current state:
   load-time guards (`feature_version`, `embedding_model_id`). Round-trip and
   guard-rejection tests included.
 
+**Done — §4, shell adapters:**
+- `shell/mailfile.rs` — `mail-parser` → `RawEmail`, preferring the text/plain
+  part and falling back to HTML.
+- `shell/embed.rs` — the `Embedder` trait plus the `fastembed`
+  (all-MiniLM-L6-v2) backend; embedding failure aborts, per the failure policy.
+- `shell/notmuch.rs` — the `notmuch`-CLI search/count adapter with the two
+  `HashMap` caches; count errors fall back to `ZERO_COUNTS`, and the mandatory
+  `not (tag:auto and tag:unread)` filter lives here in one place.
+- `shell/fit.rs` — the linfa L-BFGS solve, packing linfa's params into the
+  core `Model` (with the class-column → `Priority`-row mapping). Includes the
+  tiny-separable-set integration test.
+
 **Not yet implemented:**
-- §4–§5 — the remaining shell adapters: `mailfile`, `embed`, `notmuch`, `fit`,
-  and the `train` / `classify_new` entry points.
+- §5 — the `train` / `classify_new` entry points that compose these adapters.
 - §6 — `main.rs` CLI dispatch, real-archive training, and post-new hook install.
 
 See the *Implementation checklist* in `design.md` for the full ordered plan.
