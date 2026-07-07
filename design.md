@@ -217,20 +217,20 @@ never co-locate the ONNX blob there (different size, lifecycle, and owner).
   (tag:auto and tag:unread)` → parse each file with `mail-parser` →
   `RawEmail { from, subject, body, ts }`.
 
-  **Deduplicate by message, not file (TODO).** `--output=files` returns one path
-  *per maildir file*, and one logical message often has several — the same mail is
-  forwarded between accounts, so it lands in each account's maildir and notmuch
-  indexes every copy under the same Message-ID. Training on the file list counts
-  such a message once per copy, silently over-weighting exactly the mail that
-  crosses accounts (and inflating the logged per-class sizes: e.g. 1211 files vs.
-  785 messages on the current archive). Fix by collapsing to one example per
-  notmuch message before feature extraction. Cleanest lever is notmuch's own
-  identity: prefer `--output=messages` (message-ids, deduped by notmuch) and read
-  one representative file per id (`search --output=files id:<msgid>`, take the
-  first), rather than deduping paths ourselves. This is a training-set correctness
-  bug, not a perf nicety — note it here so the file-vs-message distinction is not
-  re-lost. Classification is unaffected (guesses are written by `id:<msgid>`, so
-  duplicate files of one message collapse onto one tag write).
+  **Deduplicate by message, not file (`--duplicate=1`).** Plain `--output=files`
+  returns one path *per maildir file*, and one logical message often has several —
+  the same mail is forwarded between accounts, so it lands in each account's
+  maildir and notmuch indexes every copy under the same Message-ID. Training on
+  that file list counts such a message once per copy, silently over-weighting
+  exactly the mail that crosses accounts (and inflating the logged per-class
+  sizes: e.g. 1211 files vs. 785 messages on the current archive). The selection
+  therefore passes `--duplicate=1`, which makes notmuch emit exactly one
+  representative file per *message* — its own identity does the collapse, so we
+  never dedup paths ourselves. One `search` per level, no N+1 per-id reads. This
+  is a training-set correctness fix, not a perf nicety — note it here so the
+  file-vs-message distinction is not re-lost. Classification is unaffected either
+  way (guesses are written by `id:<msgid>`, so duplicate files of one message
+  collapse onto one tag write).
 - **History-count adapter**: `notmuch count tag:prio-<level> and not (tag:auto and
   tag:unread) from:<addr>` and the same `from:<domain-pattern>` per class. The
   `not (tag:auto and tag:unread)` filter is mandatory here — sender proportions
@@ -441,20 +441,20 @@ Phase 3 items are listed last as deferred.
   an embedding failure aborts.
 - [x] `shell/mod.rs::train` — query confirmed labels (all dates) → parse →
   `features_for` → `fit` → `persist::save`. Labels come from one
-  `search --output=files` per priority level (the query supplies the label), so
-  no per-file tag read is needed. **Known gap:** dedupes nothing — one message
-  forwarded across accounts is trained once per maildir copy (see *Load labeled
-  messages* → dedup TODO).
+  `search --output=files --duplicate=1` per priority level (the query supplies the
+  label), so no per-file tag read is needed and each message contributes one
+  example — a message forwarded across accounts is no longer trained once per
+  maildir copy (see *Load labeled messages* → `--duplicate=1`).
 
 **6. Wiring + deploy**
 - [x] `main.rs` — arg parse → dispatch `train` / `classify`, optional
   `--model <path>`. Only calls the two shell fns; exits non-zero on error.
 - [x] Run `train` on the real archive (`task build-train` → `models/model.json`);
   `train` logs per-class set sizes up front.
-- [ ] **Deduplicate training files by message** (see *Load labeled messages* →
-  dedup TODO): collapse forwarded-across-accounts copies to one example per
-  notmuch message-id before feature extraction. Do this before trusting any
-  accuracy number — the current file list double-counts cross-account mail.
+- [x] **Deduplicate training files by message** (see *Load labeled messages* →
+  `--duplicate=1`): `search --output=files --duplicate=1` collapses
+  forwarded-across-accounts copies to one example per notmuch message, so accuracy
+  numbers no longer double-count cross-account mail.
 - [ ] Sanity-check the confusion matrix against a time-held-out split
   (*Evaluation*); classify once by hand and eyeball the guesses.
 - [ ] Install as notmuch **post-new hook**; confirm it fires on an mbsync cycle and

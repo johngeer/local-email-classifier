@@ -93,8 +93,8 @@ Built bottom-up following the checklist in `design.md`. Current state:
   (release-build then train and persist), all teeing output under `output/`.
 - Trained on the real archive: `task build-train` fits over the confirmed-label
   file set and writes `models/model.json`. `train` logs per-class set sizes up
-  front (note the file-vs-message gap — duplicate maildir files across accounts
-  are counted per file).
+  front. Selection uses `search --output=files --duplicate=1`, so a message
+  forwarded across accounts is one training example, not one per maildir copy.
 
 **Not yet implemented:**
 - §6 — post-new hook install (confirm it fires on an mbsync cycle) and the

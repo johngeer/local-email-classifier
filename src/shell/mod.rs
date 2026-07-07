@@ -59,12 +59,12 @@ pub fn classify_new(model_path: &Path) -> Result<(), String> {
         let (email, message_id) = match mailfile::parse_file_with_id(path) {
             Ok(parsed) => parsed,
             Err(e) => {
-                eprintln!("skipping {}: parse failed: {e}", path.display());
+                log!("skipping {}: parse failed: {e}", path.display());
                 continue;
             }
         };
         let Some(message_id) = message_id else {
-            eprintln!("skipping {}: no Message-ID header to tag by", path.display());
+            log!("skipping {}: no Message-ID header to tag by", path.display());
             continue;
         };
 
@@ -78,13 +78,13 @@ pub fn classify_new(model_path: &Path) -> Result<(), String> {
         let priority = core::classify(&model, &embedding, &domain_counts, &addr_counts);
 
         if let Err(e) = notmuch::write_guess(&message_id, priority) {
-            eprintln!("tagging {message_id} failed: {e}");
+            log!("tagging {message_id} failed: {e}");
             continue;
         }
         classified += 1;
     }
 
-    eprintln!("classified {classified}/{} in-scope message(s)", files.len());
+    log!("classified {classified}/{} in-scope message(s)", files.len());
     Ok(())
 }
 
@@ -109,7 +109,7 @@ pub fn train(model_path: &Path) -> Result<(), String> {
     for (_, label) in &files {
         label_counts[label.to_index()] += 1;
     }
-    eprintln!(
+    log!(
         "confirmed labels: {} total  ({} prio-low, {} prio-normal, {} prio-high)",
         files.len(),
         label_counts[core::Priority::P1.to_index()],
@@ -130,16 +130,16 @@ pub fn train(model_path: &Path) -> Result<(), String> {
         intercepts: [0.0; 3],
     };
 
-    eprintln!("embedding {} message(s)…", files.len());
+    log!("embedding {} message(s)…", files.len());
     let mut examples = Vec::new();
     for (i, (path, label)) in files.iter().enumerate() {
         if i > 0 && i % 100 == 0 {
-            eprintln!("  embedded {i}/{}…", files.len());
+            log!("  embedded {i}/{}…", files.len());
         }
         let email = match mailfile::parse_file(path) {
             Ok(email) => email,
             Err(e) => {
-                eprintln!("skipping {}: parse failed: {e}", path.display());
+                log!("skipping {}: parse failed: {e}", path.display());
                 continue;
             }
         };
@@ -161,11 +161,11 @@ pub fn train(model_path: &Path) -> Result<(), String> {
         return Err("no confirmed labels to train on".to_string());
     }
 
-    eprintln!("fitting multinomial logistic regression on {} example(s)…", examples.len());
+    log!("fitting multinomial logistic regression on {} example(s)…", examples.len());
     let model = fit::fit(&examples, CLASS_PRIOR, ALPHA, EMBEDDING_MODEL_ID)?;
     persist::save(&model, model_path)
         .map_err(|e| format!("saving model {}: {e}", model_path.display()))?;
-    eprintln!("trained on {} example(s), saved {}", examples.len(), model_path.display());
+    log!("trained on {} example(s), saved {}", examples.len(), model_path.display());
     Ok(())
 }
 

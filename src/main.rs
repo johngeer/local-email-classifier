@@ -9,6 +9,8 @@
 //! `--model <path>` overrides it. Exit status is 0 on success, 1 on error so the
 //! post-new hook surfaces a failed run.
 
+#[macro_use]
+mod log;
 mod core;
 mod shell;
 
@@ -57,11 +59,11 @@ fn run(args: &[String]) -> Result<(), String> {
     let model_path = Path::new(model_path);
     match command {
         Some("train") => {
-            eprintln!("training over confirmed labels → {}", model_path.display());
+            log!("training over confirmed labels → {}", model_path.display());
             shell::train(model_path)
         }
         Some("classify") => {
-            eprintln!("classifying in-scope new mail with {}", model_path.display());
+            log!("classifying in-scope new mail with {}", model_path.display());
             shell::classify_new(model_path)
         }
         Some(other) => Err(format!("unknown command {other:?} (expected `train` or `classify`)")),

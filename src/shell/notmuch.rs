@@ -88,7 +88,7 @@ fn counts_for_from(from_pattern: &str) -> ClassCounts {
             p.to_tag()
         );
         counts[p.to_index()] = count(&query).unwrap_or_else(|e| {
-            eprintln!("notmuch count failed for {query:?}, treating as no history: {e}");
+            log!("notmuch count failed for {query:?}, treating as no history: {e}");
             0
         });
     }
@@ -96,10 +96,12 @@ fn counts_for_from(from_pattern: &str) -> ClassCounts {
 }
 
 /// Labeled message file paths for the whole confirmed set, all dates — the
-/// training selection. One `search --output=files` per priority, so each file's
-/// label comes from *which* query returned it rather than a separate per-file tag
-/// read. Query per level: `tag:prio-<level> and <confirmed>`. Returns an error if
-/// any notmuch invocation fails (training cannot proceed without its labels).
+/// training selection. One `search --output=files --duplicate=1` per priority, so
+/// each file's label comes from *which* query returned it rather than a separate
+/// per-file tag read, and each logical message contributes exactly one training
+/// example (see [`search_files`] on the cross-account dedup). Query per level:
+/// `tag:prio-<level> and <confirmed>`. Returns an error if any notmuch invocation
+/// fails (training cannot proceed without its labels).
 ///
 /// A message carrying more than one `prio-*` tag (which the mutually-exclusive
 /// namespace should prevent) would appear under multiple levels; that is an
@@ -169,9 +171,16 @@ fn guess_tag_ops(priority: Priority) -> Vec<String> {
     tags
 }
 
-/// `notmuch search --output=files <query>` → one path per line.
+/// `notmuch search --output=files --duplicate=1 <query>` → one path per line.
+///
+/// `--duplicate=1` yields exactly one representative file per *message*, not one
+/// per maildir file. One logical message forwarded across accounts is indexed
+/// under a single Message-ID but lands in several maildirs; without this flag it
+/// would appear once per copy, over-weighting cross-account mail in the training
+/// set (785 messages read as 1211 files on the current archive). notmuch's own
+/// identity does the dedup — we never collapse paths ourselves.
 fn search_files(query: &str) -> Result<Vec<PathBuf>, String> {
-    let output = run(&["search", "--output=files", query])?;
+    let output = run(&["search", "--output=files", "--duplicate=1", query])?;
     Ok(output
         .lines()
         .filter(|l| !l.is_empty())
