@@ -55,7 +55,10 @@ impl Priority {
     }
 
     /// Parse a notmuch priority tag back into a `Priority`. Returns `None` for
-    /// any string that is not one of the three priority tags.
+    /// any string that is not one of the three priority tags. The reverse of
+    /// [`to_tag`](Self::to_tag), kept for the round-trip test and future
+    /// tag-reading callers; the v1 shell supplies labels by *which* query matched.
+    #[allow(dead_code)]
     pub fn from_tag(tag: &str) -> Option<Priority> {
         match tag {
             "prio-low" => Some(Priority::P1),

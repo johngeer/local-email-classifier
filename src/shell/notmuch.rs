@@ -95,27 +95,78 @@ fn counts_for_from(from_pattern: &str) -> ClassCounts {
     counts
 }
 
-/// Message file paths for all confirmed labels, all dates — the training set
-/// selection. Query: `(prio-low or prio-normal or prio-high) and <confirmed>`.
-/// Returns an error if the notmuch invocation itself fails (training cannot
-/// proceed without its labels).
-pub fn confirmed_label_files() -> Result<Vec<PathBuf>, String> {
-    let query = format!(
-        "(tag:{} or tag:{} or tag:{}) and {CONFIRMED_FILTER}",
+/// Labeled message file paths for the whole confirmed set, all dates — the
+/// training selection. One `search --output=files` per priority, so each file's
+/// label comes from *which* query returned it rather than a separate per-file tag
+/// read. Query per level: `tag:prio-<level> and <confirmed>`. Returns an error if
+/// any notmuch invocation fails (training cannot proceed without its labels).
+///
+/// A message carrying more than one `prio-*` tag (which the mutually-exclusive
+/// namespace should prevent) would appear under multiple levels; that is an
+/// upstream tagging bug, and duplicating it across labels is a faithful, harmless
+/// reflection of the actual tags rather than something to silently paper over.
+pub fn confirmed_label_files() -> Result<Vec<(PathBuf, Priority)>, String> {
+    let mut labeled = Vec::new();
+    for p in Priority::ALL {
+        let query = format!("tag:{} and {CONFIRMED_FILTER}", p.to_tag());
+        for path in search_files(&query)? {
+            labeled.push((path, p));
+        }
+    }
+    Ok(labeled)
+}
+
+/// Message file paths for in-scope new mail to classify: on or after the
+/// classification cutoff (`date:2026-07-01..`) and not already confirmed. The
+/// skip-confirmed rule is folded into the query itself — a message carrying a
+/// `prio-*` tag *without* `auto` is human-confirmed and must never be re-guessed,
+/// so it is excluded here. Unlabeled mail and stale `auto` guesses remain in
+/// scope. Returns an error if the notmuch invocation fails.
+pub fn new_mail_files(cutoff: &str) -> Result<Vec<PathBuf>, String> {
+    search_files(&new_mail_query(cutoff))
+}
+
+/// The in-scope-new-mail selection query. Pure (no IO) so its shape — the date
+/// cutoff AND the skip-confirmed exclusion — is unit-testable without notmuch.
+fn new_mail_query(cutoff: &str) -> String {
+    let confirmed = format!(
+        "(tag:{} or tag:{} or tag:{}) and not tag:auto",
         Priority::P1.to_tag(),
         Priority::P2.to_tag(),
         Priority::P3.to_tag(),
     );
-    search_files(&query)
+    format!("date:{cutoff}.. and not ({confirmed})")
 }
 
-/// Message file paths for in-scope new mail to classify: on or after the
-/// classification cutoff (`date:2026-07-01..`), and not already carrying a
-/// confirmed `prio-*` (the skip-confirmed rule is applied by the caller against
-/// the file's own tags; here the date cutoff gates the batch). Returns an error
-/// if the notmuch invocation fails.
-pub fn new_mail_files(cutoff: &str) -> Result<Vec<PathBuf>, String> {
-    search_files(&format!("date:{cutoff}.."))
+/// Write a fresh guess onto one message, addressed by its notmuch message id:
+/// set the given priority tag, add `auto` (the unconfirmed marker), and clear the
+/// other two priority tags so the `prio-*` namespace stays mutually exclusive.
+///
+/// The message id is notmuch's own key (the `Message-ID` header), so `id:<msgid>`
+/// targets exactly the message the shell parsed. Returns an error if the tag
+/// invocation fails — the caller logs it and moves on rather than aborting the
+/// batch.
+pub fn write_guess(message_id: &str, priority: Priority) -> Result<(), String> {
+    let tags = guess_tag_ops(priority);
+    let query = format!("id:{message_id}");
+    let mut args: Vec<&str> = vec!["tag"];
+    args.extend(tags.iter().map(String::as_str));
+    args.push("--");
+    args.push(&query);
+    run(&args).map(|_| ())
+}
+
+/// The `+/-` tag operations for a fresh guess of `priority`: add its tag and
+/// `auto`, remove the other two priority tags. Pure so the mutual-exclusion
+/// invariant is unit-testable without notmuch.
+fn guess_tag_ops(priority: Priority) -> Vec<String> {
+    let mut tags = vec![format!("+{}", priority.to_tag()), "+auto".to_string()];
+    for other in Priority::ALL {
+        if other != priority {
+            tags.push(format!("-{}", other.to_tag()));
+        }
+    }
+    tags
 }
 
 /// `notmuch search --output=files <query>` → one path per line.
@@ -179,6 +230,32 @@ mod tests {
         assert_eq!(
             query,
             "tag:prio-high and not (tag:auto and tag:unread) and from:alice@example.com"
+        );
+    }
+
+    #[test]
+    fn new_mail_query_gates_by_date_and_skips_confirmed() {
+        // In scope: on/after the cutoff. Out of scope: a confirmed prio-* (a
+        // priority tag without `auto`) — those are never re-guessed. A stale
+        // `auto` guess stays in scope (it is not excluded by `not tag:auto`).
+        assert_eq!(
+            new_mail_query("2026-07-01"),
+            "date:2026-07-01.. and not ((tag:prio-low or tag:prio-normal or tag:prio-high) \
+             and not tag:auto)"
+        );
+    }
+
+    #[test]
+    fn guess_sets_one_prio_plus_auto_and_clears_the_others() {
+        // A P3 guess: +prio-high +auto, and both other prio tags removed so the
+        // namespace stays mutually exclusive.
+        assert_eq!(
+            guess_tag_ops(Priority::P3),
+            vec!["+prio-high", "+auto", "-prio-low", "-prio-normal"]
+        );
+        assert_eq!(
+            guess_tag_ops(Priority::P1),
+            vec!["+prio-low", "+auto", "-prio-normal", "-prio-high"]
         );
     }
 

@@ -37,7 +37,8 @@ pub struct HistBlock {
 
 impl HistBlock {
     /// The block for a sender with no history: exactly the prior, zero
-    /// confidence. Used when a count query fell back to `ZERO_COUNTS`.
+    /// confidence. `hist_block` uses this for the `ZERO_COUNTS` case (an absent
+    /// sender or a count query that fell back).
     pub fn from_prior(prior: &[f32; 3]) -> HistBlock {
         HistBlock {
             proportions: *prior,

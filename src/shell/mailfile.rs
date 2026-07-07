@@ -12,7 +12,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use mail_parser::{MessageParser, MimeHeaders};
+use mail_parser::MessageParser;
 
 use crate::core::RawEmail;
 
@@ -30,6 +30,17 @@ use crate::core::RawEmail;
 /// Returns an [`io::Error`] if the file cannot be read, or a
 /// [`io::ErrorKind::InvalidData`] error if `mail-parser` cannot parse it.
 pub fn parse_file(path: &Path) -> io::Result<RawEmail> {
+    parse_file_with_id(path).map(|(email, _id)| email)
+}
+
+/// Parse the message file at `path` into a [`RawEmail`] paired with its
+/// `Message-ID` header value (stripped of the surrounding angle brackets, if any).
+///
+/// The message id is what the shell tags against: it is notmuch's own key, so
+/// `id:<msgid>` addresses exactly this message when writing a guess. Returns
+/// `None` for the id if the header is missing — such a message cannot be tagged
+/// by id and the caller skips it (logged) rather than mis-tagging.
+pub fn parse_file_with_id(path: &Path) -> io::Result<(RawEmail, Option<String>)> {
     let bytes = fs::read(path)?;
     let message = MessageParser::default()
         .parse(&bytes)
@@ -39,19 +50,20 @@ pub fn parse_file(path: &Path) -> io::Result<RawEmail> {
         .header_raw("From")
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
-
     let subject = message.subject().unwrap_or_default().to_string();
-
     let body = extract_body(&message);
-
     let ts = message.date().map(|d| d.to_timestamp()).unwrap_or(0);
+    let message_id = message.message_id().map(|s| s.trim().to_string());
 
-    Ok(RawEmail {
-        from,
-        subject,
-        body,
-        ts,
-    })
+    Ok((
+        RawEmail {
+            from,
+            subject,
+            body,
+            ts,
+        },
+        message_id,
+    ))
 }
 
 /// Pull the best-available body text: the text/plain part if the message has one,
@@ -91,6 +103,31 @@ mod tests {
         assert_eq!(email.subject, "Lunch?");
         assert!(email.body.contains("Are you free today?"));
         assert!(email.ts > 0);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn extracts_message_id_without_brackets() {
+        let raw = b"From: Alice <alice@example.com>\r\n\
+                    Subject: hi\r\n\
+                    Message-ID: <abc123@example.com>\r\n\
+                    \r\n\
+                    body\r\n";
+        let path = write_tmp("msgid", raw);
+        let (_email, id) = parse_file_with_id(&path).unwrap();
+        assert_eq!(id.as_deref(), Some("abc123@example.com"));
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn missing_message_id_is_none() {
+        let raw = b"From: a@example.com\r\n\
+                    Subject: no id\r\n\
+                    \r\n\
+                    body\r\n";
+        let path = write_tmp("no_msgid", raw);
+        let (_email, id) = parse_file_with_id(&path).unwrap();
+        assert_eq!(id, None);
         let _ = fs::remove_file(&path);
     }
 

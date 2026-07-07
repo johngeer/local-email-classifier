@@ -16,3 +16,21 @@ tasks:
     cmds:
       - mkdir -p output
       - cargo run --release -- {{.CLI_ARGS}} 2>&1 | tee "output/run-$(date +%Y%m%d-%H%M%S).log"
+
+  train:
+    desc: Fit a fresh model over every confirmed label (release), logging to output/
+    cmds:
+      - task: run
+        vars: {CLI_ARGS: train}
+
+  build-train:
+    desc: Release-build, then train and persist the model to models/model.json
+    cmds:
+      - task: build
+      - task: train
+
+  classify:
+    desc: Classify in-scope new mail — the post-new hook path (release), logging to output/
+    cmds:
+      - task: run
+        vars: {CLI_ARGS: classify}

@@ -75,8 +75,29 @@ Built bottom-up following the checklist in `design.md`. Current state:
   core `Model` (with the class-column → `Priority`-row mapping). Includes the
   tiny-separable-set integration test.
 
+**Done — §5, shell entry points:**
+- `shell/mod.rs::classify_new` — the post-new hook path: select in-scope new mail
+  (`date:2026-07-01..`, with the skip-confirmed rule folded into the query),
+  parse → embed → warm domain + address counts → `core::classify` → write
+  `prio-*` + `auto` addressed by notmuch message id. Per-message failures are
+  logged and skipped; an embedding failure aborts.
+- `shell/mod.rs::train` — fit over every confirmed label (all dates): one
+  `search --output=files` per priority level supplies each file's label, parse →
+  `core::features_for` → `shell/fit.rs::fit` → `persist::save`.
+
+**Done — §6, wiring:**
+- `main.rs` — `train` / `classify` subcommand dispatch with an optional
+  `--model <path>` (default `models/model.json`); calls only the two shell entry
+  points. Exit status is 1 on error so the post-new hook surfaces a failed run.
+- `Taskfile.yml` — `task train`, `task classify`, and `task build-train`
+  (release-build then train and persist), all teeing output under `output/`.
+- Trained on the real archive: `task build-train` fits over the confirmed-label
+  file set and writes `models/model.json`. `train` logs per-class set sizes up
+  front (note the file-vs-message gap — duplicate maildir files across accounts
+  are counted per file).
+
 **Not yet implemented:**
-- §5 — the `train` / `classify_new` entry points that compose these adapters.
-- §6 — `main.rs` CLI dispatch, real-archive training, and post-new hook install.
+- §6 — post-new hook install (confirm it fires on an mbsync cycle) and the
+  time-held-out confusion-matrix sanity check.
 
 See the *Implementation checklist* in `design.md` for the full ordered plan.

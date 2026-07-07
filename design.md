@@ -216,6 +216,21 @@ never co-locate the ONNX blob there (different size, lifecycle, and owner).
   unreviewed guesses. `notmuch search --output=files tag:prio-<level> and not
   (tag:auto and tag:unread)` → parse each file with `mail-parser` →
   `RawEmail { from, subject, body, ts }`.
+
+  **Deduplicate by message, not file (TODO).** `--output=files` returns one path
+  *per maildir file*, and one logical message often has several — the same mail is
+  forwarded between accounts, so it lands in each account's maildir and notmuch
+  indexes every copy under the same Message-ID. Training on the file list counts
+  such a message once per copy, silently over-weighting exactly the mail that
+  crosses accounts (and inflating the logged per-class sizes: e.g. 1211 files vs.
+  785 messages on the current archive). Fix by collapsing to one example per
+  notmuch message before feature extraction. Cleanest lever is notmuch's own
+  identity: prefer `--output=messages` (message-ids, deduped by notmuch) and read
+  one representative file per id (`search --output=files id:<msgid>`, take the
+  first), rather than deduping paths ourselves. This is a training-set correctness
+  bug, not a perf nicety — note it here so the file-vs-message distinction is not
+  re-lost. Classification is unaffected (guesses are written by `id:<msgid>`, so
+  duplicate files of one message collapse onto one tag write).
 - **History-count adapter**: `notmuch count tag:prio-<level> and not (tag:auto and
   tag:unread) from:<addr>` and the same `from:<domain-pattern>` per class. The
   `not (tag:auto and tag:unread)` filter is mandatory here — sender proportions
@@ -415,19 +430,33 @@ Phase 3 items are listed last as deferred.
 - [x] `shell/fit.rs` — linfa L-BFGS solve → weights/intercepts. *Test:* tiny
   linearly-separable set → ~100% train accuracy.
 
-**5. Shell entry points** (compose everything above)
-- [ ] `shell/mod.rs::classify_new` — select `date:2026-07-01..` → parse → embed →
+**5. Shell entry points** (compose everything above) ✅ complete
+- [x] `shell/mod.rs::classify_new` — select `date:2026-07-01..` → parse → embed →
   warm counts → `core::classify` → write `prio-*` + `auto`, skipping confirmed
   mail. This is the post-new hook path; build it before `train` so you can
-  eyeball predictions with a hand-made model.json.
-- [ ] `shell/mod.rs::train` — query confirmed labels (all dates) → parse →
-  `features_for` → `fit` → `persist::save`.
+  eyeball predictions with a hand-made model.json. The skip-confirmed rule is
+  folded into the notmuch query (`not ((prio-*) and not tag:auto)`); guesses are
+  written by notmuch message id (`id:<msgid>`), so a message with no Message-ID
+  is skipped rather than mistagged. Per-message failures are logged and skipped;
+  an embedding failure aborts.
+- [x] `shell/mod.rs::train` — query confirmed labels (all dates) → parse →
+  `features_for` → `fit` → `persist::save`. Labels come from one
+  `search --output=files` per priority level (the query supplies the label), so
+  no per-file tag read is needed. **Known gap:** dedupes nothing — one message
+  forwarded across accounts is trained once per maildir copy (see *Load labeled
+  messages* → dedup TODO).
 
 **6. Wiring + deploy**
-- [ ] `main.rs` — arg parse → dispatch `train` / `classify`. ~50 lines, only calls
-  the two shell fns.
-- [ ] Run `train` on the real archive, then `classify_new` once by hand; sanity-
-  check the confusion matrix against a time-held-out split (*Evaluation*).
+- [x] `main.rs` — arg parse → dispatch `train` / `classify`, optional
+  `--model <path>`. Only calls the two shell fns; exits non-zero on error.
+- [x] Run `train` on the real archive (`task build-train` → `models/model.json`);
+  `train` logs per-class set sizes up front.
+- [ ] **Deduplicate training files by message** (see *Load labeled messages* →
+  dedup TODO): collapse forwarded-across-accounts copies to one example per
+  notmuch message-id before feature extraction. Do this before trusting any
+  accuracy number — the current file list double-counts cross-account mail.
+- [ ] Sanity-check the confusion matrix against a time-held-out split
+  (*Evaluation*); classify once by hand and eyeball the guesses.
 - [ ] Install as notmuch **post-new hook**; confirm it fires on an mbsync cycle and
   respects Scope + the skip-confirmed rule.
 

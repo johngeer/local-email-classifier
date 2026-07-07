@@ -1,15 +1,88 @@
-// arg parse → dispatch train/classify. Kept to ~50 lines; only calls the two
-// shell entry points. Wiring is filled in at checklist §6.
-
-// The §1 core leaves land before the code that consumes them (features/model in
-// §2, the shell in §4–5), so they read as dead until those steps wire them in.
-// Remove this once `main` dispatches to the shell entry points (§6).
-#![allow(dead_code, unused_imports)]
+//! arg parse → dispatch `train` / `classify`. Only calls the two shell entry
+//! points ([`shell::train`], [`shell::classify_new`]); all IO lives behind them.
+//!
+//! Usage:
+//!   email_classifier train     — fit a fresh model over every confirmed label
+//!   email_classifier classify  — the post-new hook path: guess in-scope new mail
+//!
+//! The single model file is `models/model.json` (design → *Persistence*);
+//! `--model <path>` overrides it. Exit status is 0 on success, 1 on error so the
+//! post-new hook surfaces a failed run.
 
 mod core;
 mod shell;
 
-fn main() {
-    // Dispatch is wired in checklist §6 (main.rs). For now the skeleton just
-    // establishes the module boundary: `core` (pure) and `shell` (IO).
+use std::path::Path;
+use std::process::ExitCode;
+
+/// The single serialized model, relative to the working directory (the post-new
+/// hook runs from the maildir root; adjust via `--model` if that is not where
+/// `models/` lives). Gitignored and regenerable — see design → *Persistence*.
+const DEFAULT_MODEL_PATH: &str = "models/model.json";
+
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().collect();
+    match run(&args) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Parse the subcommand and optional `--model <path>`, then dispatch. Split out
+/// from `main` so the `?`-style error flows to a single reporting site.
+fn run(args: &[String]) -> Result<(), String> {
+    let mut command: Option<&str> = None;
+    let mut model_path = DEFAULT_MODEL_PATH;
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--model" => {
+                i += 1;
+                model_path = args.get(i).ok_or("--model needs a path argument")?;
+            }
+            "-h" | "--help" => {
+                print_usage();
+                return Ok(());
+            }
+            other if command.is_none() => command = Some(other),
+            other => return Err(format!("unexpected argument {other:?} (see --help)")),
+        }
+        i += 1;
+    }
+
+    let model_path = Path::new(model_path);
+    match command {
+        Some("train") => {
+            eprintln!("training over confirmed labels → {}", model_path.display());
+            shell::train(model_path)
+        }
+        Some("classify") => {
+            eprintln!("classifying in-scope new mail with {}", model_path.display());
+            shell::classify_new(model_path)
+        }
+        Some(other) => Err(format!("unknown command {other:?} (expected `train` or `classify`)")),
+        None => {
+            print_usage();
+            Err("no command given".to_string())
+        }
+    }
+}
+
+/// The one-screen usage text, printed for `--help` and on a missing/unknown
+/// command.
+fn print_usage() {
+    eprintln!(
+        "usage: email_classifier <train|classify> [--model <path>]\n\
+         \n\
+         Commands:\n  \
+           train     fit a fresh model over every confirmed label (all dates)\n  \
+           classify  guess in-scope new mail and write prio-* + auto (post-new hook)\n\
+         \n\
+         Options:\n  \
+           --model <path>  model file (default: {DEFAULT_MODEL_PATH})"
+    );
 }

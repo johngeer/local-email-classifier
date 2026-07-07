@@ -24,7 +24,11 @@ pub use domain::registrable_domain;
 pub use features::{EMBED_DIM, FEATURE_DIM};
 pub use history::{ClassCounts, ZERO as ZERO_COUNTS};
 pub use labels::Priority;
-pub use model::{predict, Model, FEATURE_VERSION};
+// `predict` is re-exported for `shell/fit.rs`'s integration test (assert argmax on
+// a hand-built model); it is not on the non-test path, hence the allow.
+#[cfg_attr(not(test), allow(unused_imports))]
+pub use model::predict;
+pub use model::{Model, FEATURE_VERSION};
 
 /// The seam type the shell hands to the core: one parsed email, already read off
 /// disk. Defined here because the core defines what it consumes; the shell's
@@ -37,8 +41,10 @@ pub struct RawEmail {
     pub subject: String,
     /// Best-available body text (text/plain part preferred by the shell).
     pub body: String,
-    /// Arrival timestamp, unix seconds. Used by the shell for time-based
-    /// scoping and splits; the core does not depend on it for v1 features.
+    /// Arrival timestamp, unix seconds. Reserved for v2 chronological-replay
+    /// training and time-based splits (design → *Phasing*); unread on the v1 path,
+    /// where notmuch does the date scoping.
+    #[allow(dead_code)]
     pub ts: i64,
 }
 
@@ -82,9 +88,15 @@ pub fn features_for(
 }
 
 /// Turn one sender's raw counts into the smoothed proportions + confidence block
-/// the feature vector carries. At `ZERO_COUNTS` this yields the prior with zero
-/// confidence, matching [`features::HistBlock::from_prior`].
+/// the feature vector carries. At `ZERO_COUNTS` this is exactly the prior with
+/// zero confidence — [`features::HistBlock::from_prior`], which the general
+/// smoothing below reproduces (`proportions` shrinks fully to the prior and
+/// `confidence` is 0 at n=0). We special-case it so that identity is stated in
+/// one place rather than left implicit in the smoothing arithmetic.
 fn hist_block(counts: &ClassCounts, prior: &[f32; 3], alpha: f32) -> features::HistBlock {
+    if *counts == ZERO_COUNTS {
+        return features::HistBlock::from_prior(prior);
+    }
     features::HistBlock {
         proportions: history::proportions(counts, prior, alpha),
         confidence: history::confidence(counts),
