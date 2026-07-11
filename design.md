@@ -152,6 +152,34 @@ the domain and address blocks (6 more dims). This is a real feature-layout chang
 bump `FEATURE_VERSION` and retrain. Defer until the confusion matrix shows the
 model mishandling sparse- vs. rich-history senders.
 
+**Possible later step — batch the embedding calls.** Embedding is the dominant
+cost in `train`/`eval`, and the current `Embedder::embed` feeds the model one
+text at a time (`embed(vec![text], None)` in `shell/embed.rs`). A singleton call
+pays the ONNX session's fixed per-invocation overhead for every email and
+amortizes no SIMD/threading across the batch, so throughput is far below what the
+model can sustain. `fastembed`'s `embed` already takes a `Vec` of texts and runs
+them as one batch; the win is simply to hand it many at once.
+
+The change is a shell-only seam extension: add `embed_batch(&[&str]) -> Vec<Vec<f32>>`
+to the `Embedder` trait (keep the singleton `embed` for the classify path) and
+rewire `train`/`eval` to collect all `prepared_text` strings, embed them in
+chunks (e.g. 256), then zip the vectors back with labels/counts. This keeps the
+core untouched — embeddings still flow in as plain data — and preserves the
+1-vector-per-email contract each backend implements.
+
+The payoff is asymmetric, which is why this is optional rather than the default:
+**`train`/`eval` embed the whole archive up front and gain the most** (order-of-
+magnitude range on CPU); `classify_new` runs from the post-new hook on the few
+messages one mbsync cycle delivered, so batching there only helps when a burst of
+new mail arrives and is otherwise a no-op. Two cheap, quality-preserving levers
+pair naturally with it: cap the ONNX intra-op thread count in `InitOptions`
+(threads only pay off once batches are non-trivial), and hold `prepared_text` to
+a tight char budget — MiniLM truncates at 512 tokens anyway (see *Core* →
+`text.rs`), so anything past its window is tokenization + inference spent on text
+the model discards. If embedding still dominates after batching, the `model2vec`
+escape hatch (a static lookup-table embedder, no transformer forward pass) is the
+next lever — same `Embedder` seam.
+
 ## Architecture: functional core, imperative shell
 
 The rule: **all IO, caching, and the linfa solver live in the shell; the core is
@@ -377,8 +405,9 @@ warm-cache feature extraction → linfa fit → save JSON model.
 2. **History:** notmuch-backed domain + address counts with HashMap memoization;
    corrections are just notmuch retags.
 3. **Optional / as-needed:** chronological-replay training (fixes the leak),
-   ordinal (proportional-odds) regression, model2vec embedder, Tranco rank if
-   novel-domain errors show up in the confusion matrix, `confidence · P(pₙ)`
+   ordinal (proportional-odds) regression, batched embedding for `train`/`eval`
+   (see *Features* → batch the embedding calls), model2vec embedder, Tranco rank
+   if novel-domain errors show up in the confusion matrix, `confidence · P(pₙ)`
    history interaction terms (see *Features*).
 
 ## Evaluation
@@ -514,8 +543,11 @@ Phase 3 items are listed last as deferred.
   in-scope messages while leaving the 960 confirmed labels untouched. See README →
   *Deployment*.
 
-**Deferred (Phase 3, only if the confusion matrix demands it):** chronological-
-replay training (removes the training-time leak), proportional-odds ordinal
-regression, `model2vec` embedder swap, Tranco rank feature, `confidence · P(pₙ)`
-history interaction terms (see *Features* — lets the linear model condition the
-proportions on how much history backs them).
+**Deferred (Phase 3, only if the confusion matrix demands it, plus perf as
+needed):** chronological-replay training (removes the training-time leak),
+proportional-odds ordinal regression, batched embedding for `train`/`eval` (an
+`embed_batch` seam on the `Embedder` trait — the only perf item, taken when
+embedding dominates training, not for accuracy; see *Features* → batch the
+embedding calls), Tranco rank feature, `confidence · P(pₙ)` history interaction
+terms (see *Features* — lets the linear model condition the proportions on how
+much history backs them).

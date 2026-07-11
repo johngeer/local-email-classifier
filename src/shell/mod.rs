@@ -30,7 +30,7 @@ use embed::{Embedder, FastEmbedder, EMBEDDING_MODEL_ID};
 /// Classification cutoff: only mail arriving on or after this date is classified,
 /// leaving the pre-cutoff backlog untouched (design → *Scope*). The cutoff gates
 /// classification **only** — training and history counts see the full archive.
-const CLASSIFY_CUTOFF: &str = "2026-07-01";
+const CLASSIFY_CUTOFF: &str = "2026-06-20";
 
 /// The class prior and Dirichlet smoothing `alpha` a freshly trained model is
 /// built with. Both are stored on the `Model` so inference reproduces training's
