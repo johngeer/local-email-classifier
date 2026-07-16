@@ -19,31 +19,44 @@ with no daemon and no separate database.
 See `docs/architecture.md` for the high-level map, and
 `docs/designs/done/design.md` for the original specification and rationale.
 
-## Quickstart
-
-### Install
-
-Download the git repository and make sure it has access to notmuch (local email index).
-
-### Building and testing
-
-This project uses [Task](https://taskfile.dev) (go-task, like make) to run commands.
-
-To train the model on your email, run:
-
-```
-task train
-```
-
 ## Performance
 
-For such a simple model, this does a good job. I find it works better than most email-service classifiers.
+This test on my email shows 86% accuracy and only adjacent errors (no mixing up a prio-high with a prio-low in this test set).
 
-I suspect one big advantage it has is the explicitly labeled emails it uses for training.
+```
+[+  0.000 Δ 0.000] time-held-out evaluation at cutoff 2026-07-01 (no model written)
+[+  0.163 Δ 0.163] opened cache/embeddings-all-MiniLM-L6-v2.redb (1616 entries)
+[+  0.209 Δ 0.045] train: 1017 total  (114 prio-low, 289 prio-normal, 614 prio-high)
+[+  1.019 Δ 0.810]   embedded 100/1017…
+[+  2.050 Δ 1.031]   embedded 200/1017…
+[+  2.866 Δ 0.816]   embedded 300/1017…
+[+  3.154 Δ 0.287]   embedded 400/1017…
+[+  3.752 Δ 0.598]   embedded 500/1017…
+[+  4.187 Δ 0.435]   embedded 600/1017…
+[+  4.559 Δ 0.372]   embedded 700/1017…
+[+  4.829 Δ 0.270]   embedded 800/1017…
+[+  5.132 Δ 0.303]   embedded 900/1017…
+[+  5.414 Δ 0.281]   embedded 1000/1017…
+[+  5.416 Δ 0.002] fitting on 1017 pre-cutoff example(s)…
+[+  5.509 Δ 0.093] test: 717 total  (95 prio-low, 406 prio-normal, 216 prio-high)
+[+  7.833 Δ 2.324] embeddings: 1725 from cache, 9 regenerated (1734 total)
 
-It is pretty fast. However, building the embeddings for the training data is the primary bottleneck. To address this, a persistent embedding cache (redb key-value store) is implemented, which reuses the vectors from earlier runs. Subsequent runs with a warm cache skip re-embedding.
+time-held-out evaluation, cutoff 2026-07-01  (717 test message(s))
+rows = true label, cols = predicted
 
-Here is an example training run on my laptop with a cold cache:
+            prio-low    prio-norm   prio-high
+prio-low            82         13          0   | recall  86.3%
+prio-norm           28        364         14   | recall  89.7%
+prio-high            0         45        171   | recall  79.2%
+
+overall accuracy : 86.1%  (617/717)
+adjacent errors  : 100  (p1↔p2, p2↔p3)
+distant  errors  : 0  (p1↔p3 — the costly ones)
+```
+
+For classification, it is fast enough to not be noticeable. However, building the embeddings is the primary bottleneck. To address this, a persistent embedding cache is implemented, which reuses the vectors from earlier runs. Subsequent runs with a warm cache skip re-embedding.
+
+Here is an example training run on my laptop with a cold cache (it has to generate all the embeddings here, but is able to usually skip that):
 
 ```
 [+  0.000 Δ 0.000] training over confirmed labels → models/model.json
@@ -65,6 +78,22 @@ Here is an example training run on my laptop with a cold cache:
 [+106.687 Δ 5.175]   embedded 1400/1451…
 [+108.450 Δ 1.763] fitting multinomial logistic regression on 1451 example(s)…
 [+108.664 Δ 0.214] trained on 1451 example(s), saved models/model.json
+```
+
+## Quickstart
+
+### Install
+
+Download the git repository and make sure it has access to notmuch (local email index).
+
+### Building and testing
+
+This project uses [Task](https://taskfile.dev) (go-task, like make) to run commands.
+
+To train the model on your email, run:
+
+```
+task train
 ```
 
 ## Architecture
