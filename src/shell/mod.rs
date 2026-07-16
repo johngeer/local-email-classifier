@@ -41,10 +41,11 @@ const ALPHA: f32 = 1.0;
 
 /// The post-new hook entry point: classify in-scope new mail and write a guess.
 ///
-/// Selects mail on or after [`CLASSIFY_CUTOFF`] that is not already
-/// human-confirmed (the skip-confirmed rule lives in the notmuch query), then for
-/// each message: parse → embed the prepared text → gather memoized domain +
-/// address history counts → `core::classify` → write `prio-*` + `auto`.
+/// Selects mail on or after [`CLASSIFY_CUTOFF`] that is still unread and not
+/// already human-confirmed (the skip-confirmed and skip-read rules live in the
+/// notmuch query — a read guess counts as confirmed and is not re-classified),
+/// then for each message: parse → embed the prepared text → gather memoized
+/// domain + address history counts → `core::classify` → write `prio-*` + `auto`.
 ///
 /// Per-message failures (an unreadable file, a missing message id, a failed tag
 /// write) are logged and skipped — one bad message never aborts the batch. An

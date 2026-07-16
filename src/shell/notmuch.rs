@@ -166,7 +166,14 @@ pub fn new_mail_files(cutoff: &str) -> Result<Vec<PathBuf>, String> {
 }
 
 /// The in-scope-new-mail selection query. Pure (no IO) so its shape — the date
-/// cutoff AND the skip-confirmed exclusion — is unit-testable without notmuch.
+/// cutoff, the skip-confirmed exclusion, AND the skip-read exclusion — is
+/// unit-testable without notmuch.
+///
+/// In scope: mail on/after `cutoff` that is still `unread` and not a confirmed
+/// label. Reading a guess is the confirm signal used everywhere else (it drops
+/// `unread`), so a guess that has been read is left alone rather than
+/// re-embedded and re-guessed every run; only genuinely-new mail and unread
+/// still-`auto` guesses are (re)classified.
 fn new_mail_query(cutoff: &str) -> String {
     let confirmed = format!(
         "(tag:{} or tag:{} or tag:{}) and not tag:auto",
@@ -174,7 +181,7 @@ fn new_mail_query(cutoff: &str) -> String {
         Priority::P2.to_tag(),
         Priority::P3.to_tag(),
     );
-    format!("date:{cutoff}.. and not ({confirmed})")
+    format!("date:{cutoff}.. and tag:unread and not ({confirmed})")
 }
 
 /// Write a fresh guess onto one message, addressed by its notmuch message id:
@@ -280,14 +287,16 @@ mod tests {
     }
 
     #[test]
-    fn new_mail_query_gates_by_date_and_skips_confirmed() {
-        // In scope: on/after the cutoff. Out of scope: a confirmed prio-* (a
-        // priority tag without `auto`) — those are never re-guessed. A stale
-        // `auto` guess stays in scope (it is not excluded by `not tag:auto`).
+    fn new_mail_query_gates_by_date_confirmed_and_read() {
+        // In scope: on/after the cutoff, still unread, not a confirmed label.
+        // Out of scope: a confirmed prio-* (a priority tag without `auto`) —
+        // never re-guessed — and any read message (reading confirms a guess, so
+        // it should not be re-classified). An *unread* stale `auto` guess stays
+        // in scope.
         assert_eq!(
             new_mail_query("2026-07-01"),
-            "date:2026-07-01.. and not ((tag:prio-low or tag:prio-normal or tag:prio-high) \
-             and not tag:auto)"
+            "date:2026-07-01.. and tag:unread and not ((tag:prio-low or tag:prio-normal or \
+             tag:prio-high) and not tag:auto)"
         );
     }
 
