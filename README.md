@@ -18,14 +18,50 @@ with no daemon and no separate database.
 
 See `design.md` for the full specification and rationale.
 
-## Building and testing
+## Quickstart
 
-This project uses [Task](https://taskfile.dev) (go-task):
+### Install
+
+Download the git repository and make sure it has access to notmuch (local email index).
+
+### Building and testing
+
+This project uses [Task](https://taskfile.dev) (go-task, like make) to run commands.
+
+To train the model on your email, run:
 
 ```
-task build   # cargo build --release
-task test    # cargo test
-task --list  # list tasks
+task train
+```
+
+## Performance
+
+I find this works better than most email-service classifiers.
+
+I suspect the main advantage is the explicitly labeled emails. However, the model also does a good job.
+
+It is quite fast at inference and the model training. However, building the embeddings for the training data is the primary bottleneck. Here is an example training run on my laptop:
+
+```
+[+  0.000 Δ 0.000] training over confirmed labels → models/model.json
+[+  0.714 Δ 0.714] confirmed labels: 1451 total  (170 prio-low, 529 prio-normal, 752 prio-high)
+[+  0.716 Δ 0.002] embedding 1451 message(s)…
+[+ 24.549 Δ23.833]   embedded 100/1451…
+[+ 33.661 Δ 9.112]   embedded 200/1451…
+[+ 41.230 Δ 7.568]   embedded 300/1451…
+[+ 48.231 Δ 7.002]   embedded 400/1451…
+[+ 54.910 Δ 6.678]   embedded 500/1451…
+[+ 62.910 Δ 8.001]   embedded 600/1451…
+[+ 70.178 Δ 7.268]   embedded 700/1451…
+[+ 75.445 Δ 5.267]   embedded 800/1451…
+[+ 80.652 Δ 5.208]   embedded 900/1451…
+[+ 85.459 Δ 4.807]   embedded 1000/1451…
+[+ 90.855 Δ 5.396]   embedded 1100/1451…
+[+ 97.103 Δ 6.247]   embedded 1200/1451…
+[+101.512 Δ 4.410]   embedded 1300/1451…
+[+106.687 Δ 5.175]   embedded 1400/1451…
+[+108.450 Δ 1.763] fitting multinomial logistic regression on 1451 example(s)…
+[+108.664 Δ 0.214] trained on 1451 example(s), saved models/model.json
 ```
 
 ## Architecture
