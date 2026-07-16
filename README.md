@@ -6,7 +6,7 @@ ordered priorities and applies them as notmuch tags:
 | Priority | Tag           | Meaning         |
 |----------|---------------|-----------------|
 | P1       | `prio-low`    | least important |
-| P2       | `prio-normal` | —               |
+| P2       | `prio-normal` |                 |
 | P3       | `prio-high`   | most important  |
 
 Classification uses multinomial logistic regression over a text embedding
@@ -37,14 +37,13 @@ task train
 
 ## Performance
 
-I find this works better than most email-service classifiers.
+For such a simple model, this does a good job. I find it works better than most email-service classifiers.
 
-I suspect the main advantage is the explicitly labeled emails. However, the model also does a good job.
+I suspect one big advantage it has is the explicitly labeled emails it uses for training.
 
-It is quite fast at inference and the model training. However, building the embeddings for the training data is the primary bottleneck. To address this, a persistent embedding cache (redb key-value store) is implemented, which reuses the vectors from earlier runs. Subsequent runs with a warm cache skip re-embedding and take less than a second.
+It is pretty fast. However, building the embeddings for the training data is the primary bottleneck. To address this, a persistent embedding cache (redb key-value store) is implemented, which reuses the vectors from earlier runs. Subsequent runs with a warm cache skip re-embedding.
 
 Here is an example training run on my laptop with a cold cache:
-
 
 ```
 [+  0.000 Δ 0.000] training over confirmed labels → models/model.json
@@ -75,13 +74,13 @@ high-level map (module layout, the two interfaces, data flow, and invariants) an
 `CLAUDE.md` for coding guidance; `docs/designs/done/design.md` is the original
 pre-implementation spec and rationale.
 
-- `src/core/` — pure functions of already-gathered data, unit-tested, no IO.
-- `src/shell/` — all IO, caching, and the linfa solver: notmuch queries, the
+- `src/core/`: pure functions of already-gathered data, unit-tested, no IO.
+- `src/shell/`: all IO, caching, and the linfa solver: notmuch queries, the
   embedder, mail parsing, persistence.
-- `models/model.json` — the single serialized model (gitignored, regenerable).
-- `cache/` — the persistent embedding cache (redb key-value store, gitignored, regenerable).
+- `models/model.json`: the single serialized model (gitignored, regenerable).
+- `cache/`: the persistent embedding cache (redb key-value store, gitignored, regenerable).
 
-### Predictor variables (392 features, all [0,1] by construction)
+### Predictor variables
 
 - **Text embedding (384):** the all-MiniLM-L6-v2 unit vector of the prepared
   message text (subject first, then body with quoted replies, signatures, and
@@ -94,7 +93,7 @@ pre-implementation spec and rationale.
 #### What the four history numbers mean
 
 For a sender, the three proportions are smoothed estimates of P(p1), P(p2),
-P(p3) — how that sender's past confirmed emails were labeled. With `n_i` emails
+P(p3), i.e. how that sender's past confirmed emails were labeled. With `n_i` emails
 seen in class `i`, prior `π` (uniform `⅓` today), and smoothing `alpha` (1.0):
 
 ```
@@ -105,8 +104,8 @@ This is Dirichlet (Laplace) smoothing, not the raw ratio `nᵢ/N`, so a
 never-seen sender returns the prior (`0.33, 0.33, 0.33`) rather than a confident
 guess, and sparse history shrinks toward it.
 
-Because the smoothing pulls toward the prior, **the amount of history already
-leaks a little into the proportions** — "1 email, all p3" and "500 emails, all
+Because the smoothing pulls toward the prior, **the amount of history
+leaks a little into the proportions**: "1 email, all p3" and "500 emails, all
 p3" do *not* give the same P(p3):
 
 ```
@@ -116,20 +115,18 @@ N=500, all p3:  P(p3) = (500 + 1·⅓) / (500 + 1) ≈ 0.998  (prior washed out)
 
 But that in-proportion signal is weak and saturates fast, so the fourth number
 makes "how much history" explicit: a confidence scalar
-`min(1, ln(1+N) / ln(1000))` — 0 at no history, rising with the total count,
+`min(1, ln(1+N) / ln(1000))`: 0 at no history, rising with the total count,
 capped at 1 (reached at N=999). It lets the regression lean on a sender's
 history only when there is enough of it, and fall back to the text embedding
 otherwise.
 
 All history counts come only from *confirmed* labels
 (`not (tag:auto and tag:unread)`), so the model never trains on its own
-unreviewed guesses. (v1 uses final tag counts rather than counts as of each
-email's arrival — a known leak that inflates exactly these proportions; see
-`docs/designs/done/design.md` → *Features* and *Training-time leak note*.)
+unreviewed guesses.
 
 ## Deployment (notmuch post-new hook)
 
-The classifier runs from notmuch's **post-new hook** — no daemon, no cron. After
+The classifier runs from notmuch's **post-new hook**: no daemon, no cron. After
 every `notmuch new` (each mbsync cycle) the hook invokes `classify`, which tags
 in-scope new mail with `prio-*` + `auto`.
 
