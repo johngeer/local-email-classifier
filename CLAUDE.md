@@ -10,15 +10,20 @@ logistic regression over a text embedding plus per-domain and per-address tag
 history. The entire user-facing API is **notmuch tags** — there is no daemon and
 no separate database; the classifier runs from notmuch's post-new hook.
 
-`design.md` is the authoritative specification: the tag/labeling model, the
-feature layout, the core/shell architecture, and an ordered implementation
-checklist. **Read `design.md` before making non-trivial changes** — most design
-questions are already answered there, and it defines invariants (e.g. the
-`not (tag:auto and tag:unread)` filter, load-time guards) that are easy to break
-accidentally.
+`docs/architecture.md` is the living reference for how the code is put together:
+the tag/labeling model, the feature layout, the core/shell architecture, and the
+invariants (e.g. the `not (tag:auto and tag:unread)` filter, load-time guards)
+that are easy to break accidentally. **Read `docs/architecture.md` before making
+non-trivial changes** — most design questions are already answered there. Keep it
+current as the architecture evolves.
 
-`README.md` tracks what is *actually implemented* so far, versus the full plan in
-`design.md`. Keep it current as the checklist advances.
+`docs/designs/done/design.md` is the original pre-implementation spec — the
+rationale the design was worked out against, now realized in the code. Consult it
+for the *why* behind a decision; `architecture.md` is the source of truth for the
+*what*. Satellite design docs for individual features live alongside it in
+`docs/designs/done/` once built (see e.g. `embedding-cache.md`).
+
+`README.md` is the user-facing overview. Keep it current as behavior changes.
 
 ## Running tasks
 
@@ -62,4 +67,5 @@ When in doubt about where code belongs: if it touches notmuch, the filesystem,
 the embedding model, or the L-BFGS solver, it is shell. Otherwise it is core.
 
 Match the surrounding code's naming, comment density, and idiom. Add unit tests
-alongside new core functions (see the *Unit tests* section of `design.md`).
+alongside new core functions (see the *Unit tests* section of
+`docs/designs/done/design.md`).

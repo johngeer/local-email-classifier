@@ -100,7 +100,7 @@ fn check_guards(model: &Model, embedding_model_id: &str) -> Result<(), LoadError
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::{classify, Priority, ZERO_COUNTS};
+    use crate::core::{classify, ZERO_COUNTS};
 
     const FEATURE_DIM: usize = 392;
     const EMBED_ID: &str = "all-MiniLM-L6-v2";

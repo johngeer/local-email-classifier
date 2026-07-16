@@ -30,7 +30,7 @@ use crate::core::{ClassCounts, Priority, ZERO_COUNTS};
 /// The confirmed-label filter, AND-ed into every history count and the training
 /// selection. Excludes only unreviewed model guesses (`auto and unread`); hand
 /// labels, corrections, and read-and-agreed guesses all remain. Mandatory —
-/// see the module docs and `design.md` → *Scope* / *History counts*.
+/// see the module docs and `docs/architecture.md` → *The tag / labeling model*.
 pub const CONFIRMED_FILTER: &str = "not (tag:auto and tag:unread)";
 
 /// Cached, memoized access to notmuch history counts for one run.

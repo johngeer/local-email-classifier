@@ -19,7 +19,7 @@
 //! worse than a p2↔p3 one).
 
 use crate::core::{self, Priority};
-use crate::shell::embed::{Embedder, FastEmbedder, EMBEDDING_MODEL_ID};
+use crate::shell::embed::{Embedder, FastEmbedder, CachingEmbedder, EMBEDDING_MODEL_ID};
 use crate::shell::{fit, mailfile, notmuch, sender_counts, ALPHA, CLASS_PRIOR};
 
 /// Run the time-held-out evaluation at `cutoff` (a notmuch date, e.g.
@@ -30,7 +30,10 @@ pub fn evaluate(cutoff: &str) -> Result<(), String> {
     let before = format!("..{cutoff}");
     let after = format!("{cutoff}..");
 
-    let embedder = FastEmbedder::new().map_err(|e| format!("loading embedder: {e}"))?;
+    let raw_embedder = FastEmbedder::new().map_err(|e| format!("loading embedder: {e}"))?;
+    let sanitized_id = crate::shell::embed::sanitize_model_id(raw_embedder.model_id());
+    let cache_path = std::path::Path::new("cache").join(format!("embeddings-{sanitized_id}.redb"));
+    let embedder = CachingEmbedder::open(raw_embedder, &cache_path);
 
     // History counts are bounded to the train window on BOTH sides, so a test
     // email's sender features are as-of-cutoff — never leaking its own future
@@ -75,6 +78,14 @@ pub fn evaluate(cutoff: &str) -> Result<(), String> {
         scored += 1;
     }
 
+    embedder.flush();
+    log!(
+        "embeddings: {} from cache, {} regenerated ({} total)",
+        embedder.hits(),
+        embedder.misses(),
+        embedder.hits() + embedder.misses()
+    );
+
     report(cutoff, &confusion, scored);
     Ok(())
 }
@@ -84,7 +95,7 @@ pub fn evaluate(cutoff: &str) -> Result<(), String> {
 /// history counts. Per-message parse failures are logged and skipped; an
 /// embedding failure aborts.
 fn build_examples(
-    embedder: &FastEmbedder,
+    embedder: &CachingEmbedder<FastEmbedder>,
     nm: &mut notmuch::Notmuch,
     files: &[(std::path::PathBuf, Priority)],
 ) -> Result<Vec<fit::Example>, String> {

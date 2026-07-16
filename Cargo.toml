@@ -19,3 +19,6 @@ ndarray = "0.15"
 # One human-readable model file
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Persistent embedding cache KV database
+redb = "2"
+

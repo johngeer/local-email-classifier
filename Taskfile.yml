@@ -46,3 +46,9 @@ tasks:
       - mkdir -p output
       - cargo run --release -- {{.CLI_ARGS}} 2>&1 | tee "output/run-$(date +%Y%m%d-%H%M%S).log"
 
+  clean-cache:
+    desc: Clear the persistent embedding cache
+    cmds:
+      - rm -rf cache/
+
+

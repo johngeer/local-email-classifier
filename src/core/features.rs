@@ -1,7 +1,8 @@
 //! (private) `assemble`: lay the embedding and the two sender-history blocks out
 //! into one fixed-order feature vector.
 //!
-//! Layout (392 dims, all ≈ [0,1] by construction — see `design.md` → Features):
+//! Layout (392 dims, all ≈ [0,1] by construction — see `docs/architecture.md` →
+//! *The feature vector*):
 //!
 //! ```text
 //! [ embedding            (384, unit-norm from MiniLM)

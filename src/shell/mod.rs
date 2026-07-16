@@ -25,7 +25,7 @@ mod eval;
 use std::path::Path;
 
 use crate::core::{self, RawEmail};
-use embed::{Embedder, FastEmbedder, EMBEDDING_MODEL_ID};
+use embed::{Embedder, FastEmbedder, CachingEmbedder, EMBEDDING_MODEL_ID};
 
 /// Classification cutoff: only mail arriving on or after this date is classified,
 /// leaving the pre-cutoff backlog untouched (design → *Scope*). The cutoff gates
@@ -52,7 +52,11 @@ const ALPHA: f32 = 1.0;
 /// embedding-model failure *does* abort, per the failure policy: a garbage vector
 /// would be silently misclassified.
 pub fn classify_new(model_path: &Path) -> Result<(), String> {
-    let embedder = FastEmbedder::new().map_err(|e| format!("loading embedder: {e}"))?;
+    let raw_embedder = FastEmbedder::new().map_err(|e| format!("loading embedder: {e}"))?;
+    let sanitized_id = embed::sanitize_model_id(raw_embedder.model_id());
+    let cache_path = Path::new("cache").join(format!("embeddings-{sanitized_id}.redb"));
+    let embedder = CachingEmbedder::open(raw_embedder, &cache_path);
+
     let model = persist::load(model_path, embedder.model_id())
         .map_err(|e| format!("loading model {}: {e}", model_path.display()))?;
 
@@ -89,6 +93,14 @@ pub fn classify_new(model_path: &Path) -> Result<(), String> {
         classified += 1;
     }
 
+    embedder.flush();
+    log!(
+        "embeddings: {} from cache, {} regenerated ({} total)",
+        embedder.hits(),
+        embedder.misses(),
+        embedder.hits() + embedder.misses()
+    );
+
     log!("classified {classified}/{} in-scope message(s)", files.len());
     Ok(())
 }
@@ -104,7 +116,10 @@ pub fn classify_new(model_path: &Path) -> Result<(), String> {
 /// Per-message parse failures are logged and skipped; an embedding failure aborts
 /// (a training example with a garbage vector would poison the fit).
 pub fn train(model_path: &Path) -> Result<(), String> {
-    let embedder = FastEmbedder::new().map_err(|e| format!("loading embedder: {e}"))?;
+    let raw_embedder = FastEmbedder::new().map_err(|e| format!("loading embedder: {e}"))?;
+    let sanitized_id = embed::sanitize_model_id(raw_embedder.model_id());
+    let cache_path = Path::new("cache").join(format!("embeddings-{sanitized_id}.redb"));
+    let embedder = CachingEmbedder::open(raw_embedder, &cache_path);
 
     let files = notmuch::confirmed_label_files()?;
 
@@ -161,6 +176,14 @@ pub fn train(model_path: &Path) -> Result<(), String> {
             label: *label,
         });
     }
+
+    embedder.flush();
+    log!(
+        "embeddings: {} from cache, {} regenerated ({} total)",
+        embedder.hits(),
+        embedder.misses(),
+        embedder.hits() + embedder.misses()
+    );
 
     if examples.is_empty() {
         return Err("no confirmed labels to train on".to_string());

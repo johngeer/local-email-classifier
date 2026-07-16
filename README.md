@@ -16,7 +16,8 @@ proportions. This uses 392 total features, all between [0,1].
 The whole interface is notmuch tags; the model runs from notmuch's post-new hook,
 with no daemon and no separate database. 
 
-See `design.md` for the full specification and rationale.
+See `docs/architecture.md` for the high-level map, and
+`docs/designs/done/design.md` for the original specification and rationale.
 
 ## Quickstart
 
@@ -40,7 +41,10 @@ I find this works better than most email-service classifiers.
 
 I suspect the main advantage is the explicitly labeled emails. However, the model also does a good job.
 
-It is quite fast at inference and the model training. However, building the embeddings for the training data is the primary bottleneck. Here is an example training run on my laptop:
+It is quite fast at inference and the model training. However, building the embeddings for the training data is the primary bottleneck. To address this, a persistent embedding cache (redb key-value store) is implemented, which reuses the vectors from earlier runs. Subsequent runs with a warm cache skip re-embedding and take less than a second.
+
+Here is an example training run on my laptop with a cold cache:
+
 
 ```
 [+  0.000 Δ 0.000] training over confirmed labels → models/model.json
@@ -66,12 +70,16 @@ It is quite fast at inference and the model training. However, building the embe
 
 ## Architecture
 
-Functional core / imperative shell (see `design.md` and `CLAUDE.md`):
+Functional core / imperative shell. See `docs/architecture.md` for the
+high-level map (module layout, the two interfaces, data flow, and invariants) and
+`CLAUDE.md` for coding guidance; `docs/designs/done/design.md` is the original
+pre-implementation spec and rationale.
 
 - `src/core/` — pure functions of already-gathered data, unit-tested, no IO.
 - `src/shell/` — all IO, caching, and the linfa solver: notmuch queries, the
   embedder, mail parsing, persistence.
 - `models/model.json` — the single serialized model (gitignored, regenerable).
+- `cache/` — the persistent embedding cache (redb key-value store, gitignored, regenerable).
 
 ### Predictor variables (392 features, all [0,1] by construction)
 
@@ -117,10 +125,7 @@ All history counts come only from *confirmed* labels
 (`not (tag:auto and tag:unread)`), so the model never trains on its own
 unreviewed guesses. (v1 uses final tag counts rather than counts as of each
 email's arrival — a known leak that inflates exactly these proportions; see
-`design.md` → *Features* and *Training-time leak note*.)
-
-For the current build status and the ordered implementation checklist, see
-`design.md`.
+`docs/designs/done/design.md` → *Features* and *Training-time leak note*.)
 
 ## Deployment (notmuch post-new hook)
 
