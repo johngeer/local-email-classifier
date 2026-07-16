@@ -1,4 +1,4 @@
-# email_classifier
+# Local Email Classifier
 
 A local-only email priority classifier. It assigns incoming mail one of three
 ordered priorities and applies them as notmuch tags:
